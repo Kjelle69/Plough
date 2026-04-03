@@ -1,4 +1,4 @@
-import { Clock, Color, PerspectiveCamera, Scene, Vector2, WebGLRenderer } from 'three';
+import { Clock, Color, PerspectiveCamera, Scene, Vector2, Vector3, WebGLRenderer } from 'three';
 import { createPlowVehicle } from '../entities/createPlowVehicle';
 import { createPrototypeCourse } from '../levels/createPrototypeCourse';
 import { cloneGameplayTuning, createDefaultGameplayTuning } from './tuning';
@@ -9,10 +9,11 @@ import { GameInput } from '../systems/GameInput';
 import { PlowInteractionSystem } from '../systems/PlowInteractionSystem';
 import { PlowScoringSystem } from '../systems/PlowScoringSystem';
 import { SnowSimulationSystem } from '../systems/SnowSimulationSystem';
+import { SnowSpraySystem } from '../systems/SnowSpraySystem';
 import { VehicleController } from '../systems/VehicleController';
 import { DevPanel } from '../ui/DevPanel';
 import { GameHud } from '../ui/GameHud';
-import type { RunSnapshot } from './types';
+import type { RunSnapshot, SnowField as SnowFieldContract } from './types';
 
 interface GameRuntimeOptions {
   mountPoint: HTMLElement;
@@ -30,6 +31,8 @@ declare global {
 
 export class GameRuntime {
   private static readonly PLOW_PROBE_FORWARD_OFFSET = 1.9;
+  private static readonly SNOWFIELD_INTERACTION_PADDING = 18;
+  private static readonly SNOWFIELD_CONTACT_PADDING = 2.5;
   private static readonly PLOW_MAX_ANGLE = Math.PI / 4;
   private static readonly PLOW_ANGLE_SPEED = 1.35;
   private static readonly PLOW_MAX_LIFT = 1;
@@ -65,6 +68,8 @@ export class GameRuntime {
 
   private readonly snowSimulation = new SnowSimulationSystem();
 
+  private readonly snowSpray = new SnowSpraySystem();
+
   private plowRun: PlowScoringSystem | null = null;
 
   private readonly hud = new GameHud();
@@ -94,6 +99,8 @@ export class GameRuntime {
   });
 
   private readonly plowProbe = new Vector2();
+
+  private readonly sprayCenter = new Vector3();
 
   private frontPileLoad = 0;
 
@@ -176,6 +183,7 @@ export class GameRuntime {
     this.options.mountPoint.append(this.renderer.domElement);
     this.scene.add(this.vehicle);
     this.scene.add(this.plowInteraction.debugBlade);
+    this.scene.add(this.snowSpray.points);
     this.hud.mount(this.options.mountPoint);
     this.devPanel?.mount(this.options.mountPoint);
     setupSceneLighting(this.scene);
@@ -258,6 +266,8 @@ export class GameRuntime {
         : { steer: 0, throttle: 0, brake: 0, handbrake: true, plowAngleDelta: 0, plowLiftDelta: 0 };
     this.updatePlowControls(inputState, deltaSeconds);
     const plowContact = this.getPlowContactState();
+    const vehicleCenter = new Vector2(this.vehicle.position.x, this.vehicle.position.z);
+    const vehicleOnPlayableArea = this.isPointOnPlayableArea(vehicleCenter.x, vehicleCenter.y);
     const collision = this.vehicleController.update(
       deltaSeconds,
       this.vehicle,
@@ -265,6 +275,7 @@ export class GameRuntime {
       this.level.obstacles,
       {
         onSnow: plowContact.onSnow,
+        offPlayableArea: !vehicleOnPlayableArea,
         plowEngaged: plowContact.onSnow && this.plowLift < 0.92,
         frontPileLoad: this.frontPileLoad,
       },
@@ -272,13 +283,18 @@ export class GameRuntime {
 
     this.lastCollisionLabel = collision.blockedBy;
     const bladeForward = new Vector2(Math.cos(this.vehicle.rotation.y), -Math.sin(this.vehicle.rotation.y));
+    vehicleCenter.set(this.vehicle.position.x, this.vehicle.position.z);
     const bladeCenter = new Vector2(
       this.vehicle.position.x + bladeForward.x * GameRuntime.PLOW_PROBE_FORWARD_OFFSET,
       this.vehicle.position.z + bladeForward.y * GameRuntime.PLOW_PROBE_FORWARD_OFFSET,
     );
+    const nearbyFields = this.getNearbySnowFields(
+      [vehicleCenter, bladeCenter],
+      GameRuntime.SNOWFIELD_INTERACTION_PADDING,
+    );
 
     let strongestFrontPileLoad = 0;
-    for (const field of this.level.snowFields) {
+    for (const field of nearbyFields) {
       const debugState = this.plowInteraction.applyToField(
         field,
         {
@@ -286,7 +302,7 @@ export class GameRuntime {
           forward: bladeForward,
           right: new Vector2(-bladeForward.y, bladeForward.x),
           speed: this.vehicleController.getPhysicsState().speed,
-          vehicleCenter: new Vector2(this.vehicle.position.x, this.vehicle.position.z),
+          vehicleCenter,
           vehicleForward: bladeForward,
           bladeAngle: this.plowAngle,
           bladeLift: this.plowLift,
@@ -297,7 +313,23 @@ export class GameRuntime {
     }
     this.frontPileLoad = strongestFrontPileLoad;
 
-    this.snowSimulation.step(this.level.snowFields);
+    this.snowSimulation.step(nearbyFields);
+    const blade = this.vehicle.userData.plowBlade;
+    if (blade) {
+      blade.getWorldPosition(this.sprayCenter);
+    } else {
+      this.sprayCenter.set(bladeCenter.x, this.vehicle.position.y + 0.35, bladeCenter.y);
+    }
+    this.sprayCenter.y -= 0.12;
+    this.snowSpray.update({
+      center: this.sprayCenter,
+      forward: bladeForward,
+      right: new Vector2(-bladeForward.y, bladeForward.x),
+      speed: Math.abs(this.vehicleController.getPhysicsState().speed),
+      plowEngaged: plowContact.onSnow && this.plowLift < 0.92,
+      onSnow: plowContact.onSnow,
+      deltaSeconds,
+    });
     this.runSnapshot = this.plowRun.update(deltaSeconds);
     this.chaseCamera.update(deltaSeconds, {
       position: this.vehicle.position,
@@ -379,6 +411,7 @@ export class GameRuntime {
     this.frontPileLoad = 0;
     this.plowAngle = 0;
     this.plowLift = 0;
+    this.snowSpray.reset();
     this.applyPlowVisualState();
     this.plowRun.reset();
     this.runSnapshot = this.plowRun.getSnapshot();
@@ -434,7 +467,7 @@ export class GameRuntime {
       this.vehicle.position.z - Math.sin(this.vehicle.rotation.y) * GameRuntime.PLOW_PROBE_FORWARD_OFFSET,
     );
 
-    for (const field of this.level.snowFields) {
+    for (const field of this.getNearbySnowFields([this.plowProbe], GameRuntime.SNOWFIELD_CONTACT_PADDING)) {
       const halfWidth = field.size.x / 2;
       const halfDepth = field.size.y / 2;
 
@@ -450,5 +483,44 @@ export class GameRuntime {
     }
 
     return { onSnow: false };
+  }
+
+  private isPointOnPlayableArea(worldX: number, worldZ: number): boolean {
+    if (!this.level) {
+      return false;
+    }
+
+    const point = new Vector2(worldX, worldZ);
+    for (const field of this.getNearbySnowFields([point], 0)) {
+      const cell = field.toCell(worldX, worldZ);
+      if (!cell) {
+        continue;
+      }
+
+      if (field.isCellActive(cell.column, cell.row)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private getNearbySnowFields(points: Vector2[], padding: number): SnowFieldContract[] {
+    if (!this.level) {
+      return [];
+    }
+
+    return this.level.snowFields.filter((field) => {
+      const halfWidth = field.size.x / 2 + padding;
+      const halfDepth = field.size.y / 2 + padding;
+
+      return points.some(
+        (point) =>
+          point.x >= field.center.x - halfWidth &&
+          point.x <= field.center.x + halfWidth &&
+          point.y >= field.center.y - halfDepth &&
+          point.y <= field.center.y + halfDepth,
+      );
+    });
   }
 }

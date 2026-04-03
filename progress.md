@@ -688,3 +688,61 @@ Please start by creating the structure and implementing only this first iteratio
 ## Validation Notes
 
 - `npm run build` passes after the static-host path fix.
+
+## Night And Snow Spray Iteration
+
+- Switched the scene into a darker moonlit setup with a visible moon mesh and blue-white directional moonlight.
+- Updated the plow vehicle with cylindrical lamps, live white front lights, red rear lights, and round wheels.
+- Added a lightweight `SnowSpraySystem` that emits short-lived snow mist around the plow when driving in snow with the blade engaged.
+
+## Validation Notes
+
+- 
+pm run build passes after the night-lighting, wheel, lamp, and snow-spray pass.
+- Browser smoke capture confirms dark moonlit ambience plus active front/rear vehicle lights in gameplay.
+- Validation artifacts were written under output/web-game/snow-spray-pass.
+
+## Snow Spray Follow And Scale Tuning
+
+- Reduced snow-spray particle count, spawn size, growth rate, and alpha so the mist reads lighter and less like oversized expanding blobs.
+- Cut the inherited forward velocity sharply and biased particles slightly backward so the snow haze stays behind in world space instead of pacing with the plow.
+- Shortened particle lifetime a bit and lowered vertical lift so the effect stays closer to the blade and dissipates faster.
+
+## Snow Mask Cleanup Iteration
+
+- Added a lightweight post-process on the sampled plowable mask in `SnowField` to fill small internal holes and remove isolated single-cell artifacts.
+- This smooths the lake-shaped playable area slightly at grid level and should eliminate zig-zag dead patches where the plow unexpectedly stops affecting snow inside the lake.
+
+## Snow Surface Seam And Spray Persistence Tuning
+
+- Switched snowfield texture UVs to world-space mapping so adjacent snow tiles share one continuous snow pattern instead of restarting the texture per tile.
+- This should remove the visible mid-lake seam caused by tile UV resets while preserving the same approximate snow texture scale.
+- Increased snow-spray lifetime and softened its vertical motion so the mist hangs behind the plow longer and slowly sinks toward the ground instead of vanishing too quickly.
+
+## Static Snow Surround Iteration
+
+- Added a separate static snow-covered ground mesh under and around the playable lake area.
+- The static ground follows sampled terrain height, extends beyond the plowable zone, and uses the same snow material family with world-space UV mapping.
+- This gives the scene a snow-covered continuation outside the active snowfield and helps hide jagged lake-edge cutoffs against the dark surroundings.
+
+## Ice Reveal Tuning
+
+- Restored a clearer ice-blue reveal in deeply plowed snow by blending trench vertex colors toward a colder blue tint as snow depth approaches fully cleared.
+- The effect is limited to the deepest cuts so ordinary snow tracks still read as snow, while blade-to-ground passes recover the earlier icy lake-surface look.
+
+## Soft Outer Boundary Tuning
+
+- Added a separate vehicle-physics penalty outside the playable lake mask instead of using a hard boundary.
+- When the vehicle center leaves the plowable area, traction, engine authority, and top speed drop sharply while rolling resistance increases heavily.
+- Result: the machine can still crawl outside the play area, but it feels bogged down enough to act as a natural barrier rather than inviting exploration far beyond the lake.
+
+## Packed Track Surface Tuning
+
+- Reworked trench-bottom coloring so plowed tracks no longer look like uneven loose snow all the way down.
+- Mid-depth cuts now shift toward a colder packed-snow tone, and deeper cuts blend further into a darker ice-blue surface.
+- This makes the cleared track bottoms read more like compressed snow and exposed lake ice instead of just noisy white snow texture.
+
+## Static Snow Height Adjustment
+
+- Lowered the surrounding static snow surface slightly so the plowed lake surface can read more clearly underneath.
+- This keeps the soft snowy continuation outside the playable area while reducing the chance that the surround layer visually competes with exposed ice in cleared tracks.

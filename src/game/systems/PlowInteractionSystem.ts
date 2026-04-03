@@ -340,7 +340,7 @@ export class PlowInteractionSystem {
         const localRight = deltaX * right.x + deltaZ * right.y;
         const localForward = deltaX * forward.x + deltaZ * forward.y;
 
-        if (Math.abs(localRight) > halfWidth || Math.abs(localForward) > halfDepth) {
+        if (Math.abs(localRight) > halfWidth || Math.abs(localForward) > halfDepth || !field.isCellActive(column, row)) {
           continue;
         }
 
@@ -387,7 +387,11 @@ export class PlowInteractionSystem {
         const localRight = deltaX * right.x + deltaZ * right.y;
         const localForward = deltaX * forward.x + deltaZ * forward.y;
 
-        if (Math.abs(localRight) > halfWidth + halfDepth || Math.abs(localForward) > halfDepth) {
+        if (
+          Math.abs(localRight) > halfWidth + halfDepth ||
+          Math.abs(localForward) > halfDepth ||
+          !field.isCellActive(column, row)
+        ) {
           continue;
         }
 

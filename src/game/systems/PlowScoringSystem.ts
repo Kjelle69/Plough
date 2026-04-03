@@ -156,7 +156,8 @@ export class PlowScoringSystem {
           worldX < target.center.x - halfWidth ||
           worldX > target.center.x + halfWidth ||
           worldZ < target.center.y - halfDepth ||
-          worldZ > target.center.y + halfDepth
+          worldZ > target.center.y + halfDepth ||
+          !field.isCellActive(column, row)
         ) {
           continue;
         }

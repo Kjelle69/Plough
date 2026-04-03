@@ -19,7 +19,9 @@ export class SnowSimulationSystem {
       if (this.relaxationPasses > 0 && this.relaxationFactor > 0) {
         field.relax(this.relaxationPasses, this.relaxationFactor);
       }
-      field.render();
+      if (field.needsRender()) {
+        field.render();
+      }
     }
   }
 }

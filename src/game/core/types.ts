@@ -49,9 +49,11 @@ export interface SnowField {
   sampleSnowDepthAtWorld: (worldX: number, worldZ: number) => number;
   toCell: (worldX: number, worldZ: number) => { column: number; row: number } | null;
   cellIndex: (column: number, row: number) => number;
+  isCellActive: (column: number, row: number) => boolean;
   addDynamicHeight: (column: number, row: number, amount: number) => number;
   removeDynamicHeight: (column: number, row: number, amount: number) => number;
   relax: (passes: number, factor: number) => void;
+  needsRender: () => boolean;
   getClearFraction: () => number;
   setDebugState: (state: SnowFieldDebugState) => void;
   getDebugState: () => SnowFieldDebugState;

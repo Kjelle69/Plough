@@ -13,6 +13,7 @@ const UP_AXIS = new Vector3(0, 1, 0);
 
 interface VehicleControllerModifiers {
   onSnow: boolean;
+  offPlayableArea: boolean;
   plowEngaged: boolean;
   frontPileLoad: number;
 }
@@ -65,23 +66,32 @@ export class VehicleController {
     const frontPileLoad = Math.max(0, modifiers.frontPileLoad);
     const frontLoadDivisor = this.tuning?.frontLoadDivisor ?? 0.92;
     const frontLoadFactor = Math.min(frontPileLoad / frontLoadDivisor, 2.2);
-    const snowGrip = modifiers.onSnow ? 0.72 : 0.96;
+    const offPlayableAreaFactor = modifiers.offPlayableArea ? 1 : 0;
+    const snowGrip = modifiers.offPlayableArea ? 0.34 : modifiers.onSnow ? 0.72 : 0.96;
     const dragStrength = this.tuning?.frontLoadDragStrength ?? 0.62;
     const plowDrag = modifiers.plowEngaged ? 1.72 * Math.max(0.08, 1 - frontLoadFactor * dragStrength) : 1;
     const traction = snowGrip * (input.handbrake ? 0.68 : 1) * plowDrag;
     const engineStrength = this.tuning?.frontLoadEngineStrength ?? 0.1;
     const reverseEngineForce = this.tuning?.reverseEngineForce ?? 22.5;
     const forwardEngineForce = this.tuning?.forwardEngineForce ?? 25;
-    const engineForce = driveInput >= 0 ? forwardEngineForce * Math.max(0.04, 1 - frontLoadFactor * engineStrength) : reverseEngineForce;
+    const offPlayableEnginePenalty = modifiers.offPlayableArea ? 0.18 : 1;
+    const engineForce =
+      driveInput >= 0
+        ? forwardEngineForce * Math.max(0.04, 1 - frontLoadFactor * engineStrength) * offPlayableEnginePenalty
+        : reverseEngineForce * (modifiers.offPlayableArea ? 0.24 : 1);
     const rollingResistance =
-      (modifiers.onSnow ? 1.25 : 0.85) + frontLoadFactor * (this.tuning?.frontLoadResistanceStrength ?? 1.0);
+      (modifiers.offPlayableArea ? 5.8 : modifiers.onSnow ? 1.25 : 0.85) +
+      frontLoadFactor * (this.tuning?.frontLoadResistanceStrength ?? 1.0) +
+      offPlayableAreaFactor * 1.8;
     const aerodynamicDrag = 0.032;
-    const snowBrakeForce = modifiers.onSnow ? 7.2 : 9.5;
-    const gripBlend = 1 - Math.exp(-deltaSeconds * (modifiers.onSnow ? 3.4 : 6.8));
+    const snowBrakeForce = modifiers.offPlayableArea ? 10.8 : modifiers.onSnow ? 7.2 : 9.5;
+    const gripBlend = 1 - Math.exp(-deltaSeconds * (modifiers.offPlayableArea ? 2.2 : modifiers.onSnow ? 3.4 : 6.8));
     const maxForwardSpeedBase = modifiers.plowEngaged ? (this.tuning?.maxForwardSpeed ?? 11) : 14.5;
     const maxForwardSpeed =
-      maxForwardSpeedBase * Math.max(0.02, 1 - frontLoadFactor * (this.tuning?.frontLoadMaxSpeedStrength ?? 0.28));
-    const maxReverseSpeed = -(this.tuning?.maxReverseSpeed ?? 22.4);
+      maxForwardSpeedBase *
+      Math.max(0.02, 1 - frontLoadFactor * (this.tuning?.frontLoadMaxSpeedStrength ?? 0.28)) *
+      (modifiers.offPlayableArea ? 0.24 : 1);
+    const maxReverseSpeed = -(this.tuning?.maxReverseSpeed ?? 22.4) * (modifiers.offPlayableArea ? 0.28 : 1);
 
     this.forwardDirection.copy(FORWARD).applyAxisAngle(UP_AXIS, this.physicsState.heading);
     let forwardSpeed = this.velocity.dot(this.forwardDirection);
@@ -103,7 +113,10 @@ export class VehicleController {
     nextForwardSpeed -= forwardSpeed * Math.abs(forwardSpeed) * aerodynamicDrag * deltaSeconds;
 
     if (Math.abs(driveInput) < 0.05) {
-      nextForwardSpeed = this.moveTowardZero(nextForwardSpeed, (modifiers.onSnow ? 1.1 : 1.6) * deltaSeconds);
+      nextForwardSpeed = this.moveTowardZero(
+        nextForwardSpeed,
+        (modifiers.offPlayableArea ? 2.8 : modifiers.onSnow ? 1.1 : 1.6) * deltaSeconds,
+      );
     }
 
     if (input.handbrake || input.brake > 0.05) {

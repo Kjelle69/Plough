@@ -1,15 +1,20 @@
 import {
+  BufferAttribute,
   Box3,
   ConeGeometry,
   CylinderGeometry,
+  Float32BufferAttribute,
   Group,
   InstancedMesh,
   Matrix4,
   Mesh,
   MeshStandardMaterial,
   Object3D,
+  PlaneGeometry,
   Raycaster,
-  Vector2,
+  RepeatWrapping,
+  SRGBColorSpace,
+  TextureLoader,
   Vector3,
 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -17,19 +22,42 @@ import type { LevelDefinition, ObstacleBody, RouteTarget } from '../core/types';
 import type { SnowTuning } from '../core/tuning';
 import { SnowField } from '../systems/SnowField';
 import ploughMapUrl from '../../assets/New Folder/Plough.glb?url';
+import snowCoarseBaseColorUrl from '../../assets/snowcoarse/SnowTileCrisp_BaseColor.png';
+import snowCoarseNormalUrl from '../../assets/snowcoarse/SnowTileCrisp_Normal.png';
+import snowCoarseRoughnessUrl from '../../assets/snowcoarse/SnowTileCrisp_Roughness.png';
 
 const MAP_SCALE = 1;
-const SNOWFIELD_MARGIN = 4;
-const SNOWFIELD_COLUMNS = 512;
-const SNOWFIELD_ROWS = 512;
-const LOCAL_SNOWFIELD_SIZE = 100;
-const TREE_COUNT = 440;
-const TERRAIN_SAMPLE_COLUMNS = 196;
-const TERRAIN_SAMPLE_ROWS = 196;
+const MAP_VISUAL_Y_OFFSET = -1.2;
+const SNOWFIELD_TILE_SIZE = 100;
+const SNOWFIELD_SAMPLES_PER_UNIT = 3;
+const STATIC_SNOW_MARGIN = 60;
+const STATIC_SNOW_HEIGHT_OFFSET = 0.44;
+const STATIC_SNOW_SINK = 0.55;
+const STATIC_SNOW_REPEAT_PER_WORLD_UNIT = 9 / 100;
+const STATIC_SNOW_MAX_SEGMENTS = 220;
+const TREE_COUNT = 240;
+const TERRAIN_SAMPLE_COLUMNS_PER_UNIT = 1.5;
+const TERRAIN_SAMPLE_ROWS_PER_UNIT = 1.5;
+const SPAWN_MARGIN = 12;
+const SPAWN_STEP = 6;
+
+const textureLoader = new TextureLoader();
+const staticSnowBaseColor = textureLoader.load(snowCoarseBaseColorUrl);
+const staticSnowNormal = textureLoader.load(snowCoarseNormalUrl);
+const staticSnowRoughness = textureLoader.load(snowCoarseRoughnessUrl);
+
+for (const texture of [staticSnowBaseColor, staticSnowNormal, staticSnowRoughness]) {
+  texture.wrapS = RepeatWrapping;
+  texture.wrapT = RepeatWrapping;
+  texture.repeat.set(1, 1);
+}
+
+staticSnowBaseColor.colorSpace = SRGBColorSpace;
 
 interface MapLoadResult {
   scene: Group;
   terrainSampler: (worldX: number, worldZ: number) => number;
+  plowableSampler: (worldX: number, worldZ: number) => boolean;
   bounds: Box3;
 }
 
@@ -39,53 +67,53 @@ export async function createPrototypeCourse(snowTuning?: SnowTuning): Promise<Le
   const snowFields: SnowField[] = [];
   const routeTargets: RouteTarget[] = [];
 
-  const { scene: mapScene, terrainSampler, bounds: mapBounds } = await loadMapScene();
+  const { scene: mapScene, terrainSampler, plowableSampler, bounds: mapBounds } = await loadMapScene();
   root.add(mapScene);
+  root.add(createStaticSnowGround(mapBounds, terrainSampler));
 
-  const mapSize = mapBounds.getSize(new Vector3());
   const mapCenter = mapBounds.getCenter(new Vector3());
-  const snowCenter = new Vector3(
-    mapCenter.x - Math.min(mapSize.x * 0.18, 900),
-    0,
-    mapCenter.z + Math.min(mapSize.z * 0.08, 320),
-  );
-  const spawnPoint = new Vector3(
-    snowCenter.x - LOCAL_SNOWFIELD_SIZE * 0.38,
-    terrainSampler(snowCenter.x - LOCAL_SNOWFIELD_SIZE * 0.38, snowCenter.z) + 0.08,
-    snowCenter.z,
-  );
+  let fieldIndex = 0;
+  for (let minX = mapBounds.min.x; minX < mapBounds.max.x; minX += SNOWFIELD_TILE_SIZE) {
+    for (let minZ = mapBounds.min.z; minZ < mapBounds.max.z; minZ += SNOWFIELD_TILE_SIZE) {
+      const maxX = Math.min(minX + SNOWFIELD_TILE_SIZE, mapBounds.max.x);
+      const maxZ = Math.min(minZ + SNOWFIELD_TILE_SIZE, mapBounds.max.z);
+      const width = maxX - minX;
+      const depth = maxZ - minZ;
+      const center = new Vector3(minX + width / 2, 0, minZ + depth / 2);
+      const terrainHeightSampler = createCachedHeightSampler(
+        terrainSampler,
+        center,
+        width,
+        depth,
+        Math.max(2, Math.round(width * TERRAIN_SAMPLE_COLUMNS_PER_UNIT) + 1),
+        Math.max(2, Math.round(depth * TERRAIN_SAMPLE_ROWS_PER_UNIT) + 1),
+      );
 
-  const terrainHeightSampler = createCachedHeightSampler(
-    terrainSampler,
-    snowCenter,
-    LOCAL_SNOWFIELD_SIZE + SNOWFIELD_MARGIN,
-    LOCAL_SNOWFIELD_SIZE + SNOWFIELD_MARGIN,
-    TERRAIN_SAMPLE_COLUMNS,
-    TERRAIN_SAMPLE_ROWS,
-  );
+      const field = new SnowField({
+        label: `Plough Map Snowfield ${fieldIndex + 1}`,
+        width,
+        depth,
+        centerX: center.x,
+        centerZ: center.z,
+        columns: Math.max(2, Math.round(width * SNOWFIELD_SAMPLES_PER_UNIT) + 1),
+        rows: Math.max(2, Math.round(depth * SNOWFIELD_SAMPLES_PER_UNIT) + 1),
+        tuning: snowTuning,
+        baseHeightSampler: terrainHeightSampler,
+        maskSampler: plowableSampler,
+      });
 
-  const mainField = new SnowField({
-    label: 'Plough Map Snowfield',
-    width: LOCAL_SNOWFIELD_SIZE + SNOWFIELD_MARGIN,
-    depth: LOCAL_SNOWFIELD_SIZE + SNOWFIELD_MARGIN,
-    centerX: snowCenter.x,
-    centerZ: snowCenter.z,
-    columns: SNOWFIELD_COLUMNS,
-    rows: SNOWFIELD_ROWS,
-    tuning: snowTuning,
-    baseHeightSampler: terrainHeightSampler,
-  });
-  root.add(mainField.mesh);
-  snowFields.push(mainField);
+      if (field.totalCells === 0) {
+        continue;
+      }
 
-  routeTargets.push({
-    label: 'Map Snow Cover',
-    fieldLabel: mainField.label,
-    center: new Vector2(snowCenter.x, snowCenter.z),
-    size: new Vector2(LOCAL_SNOWFIELD_SIZE * 0.92, LOCAL_SNOWFIELD_SIZE * 0.92),
-  });
+      root.add(field.mesh);
+      snowFields.push(field);
+      fieldIndex += 1;
+    }
+  }
 
-  const treeScatter = createTreeScatter(mapBounds, snowCenter, LOCAL_SNOWFIELD_SIZE, terrainSampler);
+  const spawnPoint = createSpawnPoint(mapBounds, mapCenter, terrainSampler, plowableSampler);
+  const treeScatter = createTreeScatter(mapBounds, mapCenter, plowableSampler, terrainSampler);
   root.add(treeScatter);
 
   const reset = (): void => {
@@ -107,7 +135,7 @@ async function loadMapScene(): Promise<MapLoadResult> {
 
   const rawBounds = new Box3().setFromObject(scene);
   const rawCenter = rawBounds.getCenter(new Vector3());
-  scene.position.set(-rawCenter.x, -rawBounds.min.y, -rawCenter.z);
+  scene.position.set(-rawCenter.x, -rawBounds.min.y + MAP_VISUAL_Y_OFFSET, -rawCenter.z);
 
   scene.traverse((node) => {
     if (!('isMesh' in node) || !node.isMesh) {
@@ -122,8 +150,9 @@ async function loadMapScene(): Promise<MapLoadResult> {
   const bounds = new Box3().setFromObject(scene);
   const terrainMeshes = collectTerrainMeshes(scene);
   const terrainSampler = createTerrainSampler(terrainMeshes, bounds.max.y + 250);
+  const plowableSampler = createPlowableSampler(terrainMeshes, bounds.max.y + 250);
 
-  return { scene, terrainSampler, bounds };
+  return { scene, terrainSampler, plowableSampler, bounds };
 }
 
 function collectTerrainMeshes(scene: Group): Mesh[] {
@@ -174,6 +203,22 @@ function createTerrainSampler(meshes: Mesh[], rayOriginY: number): (worldX: numb
   };
 }
 
+function createPlowableSampler(meshes: Mesh[], rayOriginY: number): (worldX: number, worldZ: number) => boolean {
+  const raycaster = new Raycaster();
+  const origin = new Vector3();
+  const direction = new Vector3(0, -1, 0);
+
+  return (worldX: number, worldZ: number): boolean => {
+    if (meshes.length === 0) {
+      return false;
+    }
+
+    origin.set(worldX, rayOriginY, worldZ);
+    raycaster.set(origin, direction);
+    return raycaster.intersectObjects(meshes, false).length > 0;
+  };
+}
+
 function createCachedHeightSampler(
   sourceSampler: (worldX: number, worldZ: number) => number,
   center: Vector3,
@@ -217,10 +262,74 @@ function createCachedHeightSampler(
   };
 }
 
+function createStaticSnowGround(
+  mapBounds: Box3,
+  terrainSampler: (worldX: number, worldZ: number) => number,
+): Mesh {
+  const width = mapBounds.max.x - mapBounds.min.x + STATIC_SNOW_MARGIN * 2;
+  const depth = mapBounds.max.z - mapBounds.min.z + STATIC_SNOW_MARGIN * 2;
+  const centerX = (mapBounds.min.x + mapBounds.max.x) / 2;
+  const centerZ = (mapBounds.min.z + mapBounds.max.z) / 2;
+  const segmentsX = Math.max(24, Math.min(STATIC_SNOW_MAX_SEGMENTS, Math.round(width * 0.4)));
+  const segmentsZ = Math.max(24, Math.min(STATIC_SNOW_MAX_SEGMENTS, Math.round(depth * 0.4)));
+  const geometry = new PlaneGeometry(width, depth, segmentsX, segmentsZ);
+  const positionAttribute = geometry.attributes.position as Float32BufferAttribute;
+  const uvAttribute = geometry.attributes.uv as BufferAttribute;
+  const colors = new Float32Array((segmentsX + 1) * (segmentsZ + 1) * 3);
+  const colorAttribute = new Float32BufferAttribute(colors, 3);
+
+  for (let row = 0; row <= segmentsZ; row += 1) {
+    for (let column = 0; column <= segmentsX; column += 1) {
+      const index = row * (segmentsX + 1) + column;
+      const worldX = centerX - width / 2 + (column / Math.max(segmentsX, 1)) * width;
+      const worldZ = centerZ - depth / 2 + (row / Math.max(segmentsZ, 1)) * depth;
+      const clampedX = Math.min(mapBounds.max.x, Math.max(mapBounds.min.x, worldX));
+      const clampedZ = Math.min(mapBounds.max.z, Math.max(mapBounds.min.z, worldZ));
+      const baseHeight = terrainSampler(clampedX, clampedZ);
+      const wave =
+        Math.sin(worldX * 0.018 + worldZ * 0.011) * 0.06 +
+        Math.cos(worldZ * 0.016 - worldX * 0.009) * 0.05;
+
+      positionAttribute.setZ(index, baseHeight + STATIC_SNOW_HEIGHT_OFFSET + wave - STATIC_SNOW_SINK);
+      uvAttribute.setXY(
+        index,
+        worldX * STATIC_SNOW_REPEAT_PER_WORLD_UNIT,
+        worldZ * STATIC_SNOW_REPEAT_PER_WORLD_UNIT,
+      );
+      colorAttribute.setXYZ(index, 0.76, 0.81, 0.86);
+    }
+  }
+
+  geometry.setAttribute('color', colorAttribute);
+  geometry.setAttribute('uv1', new BufferAttribute(uvAttribute.array.slice(), 2));
+  positionAttribute.needsUpdate = true;
+  uvAttribute.needsUpdate = true;
+  geometry.computeVertexNormals();
+
+  const material = new MeshStandardMaterial({
+    color: '#eef6ff',
+    emissive: '#7ebfe0',
+    emissiveIntensity: 0.035,
+    map: staticSnowBaseColor,
+    normalMap: staticSnowNormal,
+    roughnessMap: staticSnowRoughness,
+    roughness: 0.97,
+    metalness: 0.02,
+    vertexColors: true,
+  });
+
+  const mesh = new Mesh(geometry, material);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.set(centerX, 0, centerZ);
+  mesh.receiveShadow = true;
+  mesh.castShadow = true;
+  return mesh;
+}
+
 function createTreeScatter(
   mapBounds: Box3,
   snowCenter: Vector3,
-  snowfieldSize: number,
+  plowableSampler: (worldX: number, worldZ: number) => boolean,
   terrainSampler: (worldX: number, worldZ: number) => number,
 ): Group {
   const group = new Group();
@@ -230,7 +339,6 @@ function createTreeScatter(
   const crownMesh = new InstancedMesh(new ConeGeometry(0.9, 2.8, 8), crownMaterial, TREE_COUNT);
   const dummy = new Object3D();
   const matrix = new Matrix4();
-  const exclusionHalfSize = snowfieldSize * 0.68;
   let placed = 0;
   let seed = 1337;
 
@@ -245,10 +353,7 @@ function createTreeScatter(
     const x = mapBounds.min.x + 16 + randomX * Math.max(mapBounds.max.x - mapBounds.min.x - 32, 1);
     const z = mapBounds.min.z + 16 + randomZ * Math.max(mapBounds.max.z - mapBounds.min.z - 32, 1);
 
-    if (
-      Math.abs(x - snowCenter.x) < exclusionHalfSize &&
-      Math.abs(z - snowCenter.z) < exclusionHalfSize
-    ) {
+    if (plowableSampler(x, z) || Math.abs(z - snowCenter.z) < 18) {
       continue;
     }
 
@@ -281,4 +386,25 @@ function createTreeScatter(
   group.add(trunkMesh, crownMesh);
 
   return group;
+}
+
+function createSpawnPoint(
+  mapBounds: Box3,
+  mapCenter: Vector3,
+  terrainSampler: (worldX: number, worldZ: number) => number,
+  plowableSampler: (worldX: number, worldZ: number) => boolean,
+): Vector3 {
+  for (let x = mapBounds.min.x + SPAWN_MARGIN; x <= mapBounds.max.x - SPAWN_MARGIN; x += SPAWN_STEP) {
+    const zOffsets = [0, SPAWN_STEP, -SPAWN_STEP, SPAWN_STEP * 2, -SPAWN_STEP * 2];
+    for (const zOffset of zOffsets) {
+      const z = mapCenter.z + zOffset;
+      if (!plowableSampler(x, z)) {
+        continue;
+      }
+
+      return new Vector3(x, terrainSampler(x, z) + 0.08, z);
+    }
+  }
+
+  return new Vector3(mapCenter.x, terrainSampler(mapCenter.x, mapCenter.z) + 0.08, mapCenter.z);
 }

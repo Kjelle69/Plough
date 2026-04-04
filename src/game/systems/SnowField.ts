@@ -281,6 +281,22 @@ export class SnowField implements SnowFieldContract {
     return removed;
   }
 
+  setDynamicHeight(column: number, row: number, value: number): void {
+    if (!this.isCellActive(column, row)) {
+      return;
+    }
+
+    const index = this.cellIndex(column, row);
+    const clamped = Math.min(this.maxDynamicHeight, Math.max(0, value));
+    if (this.dynamicHeight[index] === clamped) {
+      return;
+    }
+
+    this.setDynamicHeightAtIndex(index, clamped);
+    this.dirty = true;
+    this.normalsDirty = true;
+  }
+
   relax(passes: number, factor: number): void {
     const temp = new Float32Array(this.dynamicHeight);
     for (let pass = 0; pass < passes; pass += 1) {

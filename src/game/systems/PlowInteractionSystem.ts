@@ -321,9 +321,8 @@ export class PlowInteractionSystem {
     const minZ = center.y - Math.abs(right.y) * width / 2 - Math.abs(forward.y) * depth / 2 - field.cellDepth;
     const maxZ = center.y + Math.abs(right.y) * width / 2 + Math.abs(forward.y) * depth / 2 + field.cellDepth;
 
-    const minCell = field.toCell(minX, minZ);
-    const maxCell = field.toCell(maxX, maxZ);
-    if (!minCell || !maxCell) {
+    const clampedBounds = this.getClampedFieldBounds(field, minX, minZ, maxX, maxZ);
+    if (!clampedBounds) {
       return [];
     }
 
@@ -331,8 +330,8 @@ export class PlowInteractionSystem {
     const halfWidth = width / 2;
     const halfDepth = depth / 2;
 
-    for (let row = Math.min(minCell.row, maxCell.row); row <= Math.max(minCell.row, maxCell.row); row += 1) {
-      for (let column = Math.min(minCell.column, maxCell.column); column <= Math.max(minCell.column, maxCell.column); column += 1) {
+    for (let row = clampedBounds.minRow; row <= clampedBounds.maxRow; row += 1) {
+      for (let column = clampedBounds.minColumn; column <= clampedBounds.maxColumn; column += 1) {
         const worldX = field.center.x - field.size.x / 2 + column * field.cellWidth;
         const worldZ = field.center.y - field.size.y / 2 + row * field.cellDepth;
         const deltaX = worldX - center.x;
@@ -371,15 +370,14 @@ export class PlowInteractionSystem {
     const minZ = center.y - Math.abs(right.y) * halfWidth - Math.abs(forward.y) * halfDepth - field.cellDepth;
     const maxZ = center.y + Math.abs(right.y) * halfWidth + Math.abs(forward.y) * halfDepth + field.cellDepth;
 
-    const minCell = field.toCell(minX, minZ);
-    const maxCell = field.toCell(maxX, maxZ);
-    if (!minCell || !maxCell) {
+    const clampedBounds = this.getClampedFieldBounds(field, minX, minZ, maxX, maxZ);
+    if (!clampedBounds) {
       return [];
     }
 
     const cells: Array<{ column: number; row: number; weight: number }> = [];
-    for (let row = Math.min(minCell.row, maxCell.row); row <= Math.max(minCell.row, maxCell.row); row += 1) {
-      for (let column = Math.min(minCell.column, maxCell.column); column <= Math.max(minCell.column, maxCell.column); column += 1) {
+    for (let row = clampedBounds.minRow; row <= clampedBounds.maxRow; row += 1) {
+      for (let column = clampedBounds.minColumn; column <= clampedBounds.maxColumn; column += 1) {
         const worldX = field.center.x - field.size.x / 2 + column * field.cellWidth;
         const worldZ = field.center.y - field.size.y / 2 + row * field.cellDepth;
         const deltaX = worldX - center.x;
@@ -412,6 +410,40 @@ export class PlowInteractionSystem {
     }
 
     return cells;
+  }
+
+  private getClampedFieldBounds(
+    field: SnowField,
+    minX: number,
+    minZ: number,
+    maxX: number,
+    maxZ: number,
+  ): { minColumn: number; maxColumn: number; minRow: number; maxRow: number } | null {
+    const fieldMinX = field.center.x - field.size.x / 2;
+    const fieldMaxX = field.center.x + field.size.x / 2;
+    const fieldMinZ = field.center.y - field.size.y / 2;
+    const fieldMaxZ = field.center.y + field.size.y / 2;
+    const clampedMinX = Math.max(minX, fieldMinX);
+    const clampedMaxX = Math.min(maxX, fieldMaxX);
+    const clampedMinZ = Math.max(minZ, fieldMinZ);
+    const clampedMaxZ = Math.min(maxZ, fieldMaxZ);
+
+    if (clampedMinX > clampedMaxX || clampedMinZ > clampedMaxZ) {
+      return null;
+    }
+
+    const minCell = field.toCell(clampedMinX, clampedMinZ);
+    const maxCell = field.toCell(clampedMaxX, clampedMaxZ);
+    if (!minCell || !maxCell) {
+      return null;
+    }
+
+    return {
+      minColumn: Math.min(minCell.column, maxCell.column),
+      maxColumn: Math.max(minCell.column, maxCell.column),
+      minRow: Math.min(minCell.row, maxCell.row),
+      maxRow: Math.max(minCell.row, maxCell.row),
+    };
   }
 
   private collectDepositCells(

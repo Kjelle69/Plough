@@ -2,14 +2,29 @@ import {
   BoxGeometry,
   CylinderGeometry,
   Group,
+  MathUtils,
   Mesh,
   MeshStandardMaterial,
   PointLight,
+  Quaternion,
   SpotLight,
+  Vector3,
 } from 'three';
+
+const WHEEL_RADIUS = 0.46;
+const WHEEL_WIDTH = 0.28;
+const WHEEL_TREAD_COUNT = 12;
+const EXHAUST_STACK_HEIGHT = 1.05;
 
 export function createPlowVehicle(): Group {
   const vehicle = new Group();
+  const cabinGlassMaterial = new MeshStandardMaterial({
+    color: '#365b8a',
+    metalness: 0.08,
+    roughness: 0.16,
+    transparent: true,
+    opacity: 0.62,
+  });
 
   const body = new Mesh(
     new BoxGeometry(2.8, 1, 1.7),
@@ -27,6 +42,32 @@ export function createPlowVehicle(): Group {
   cabin.castShadow = true;
   vehicle.add(cabin);
 
+  const windshield = new Mesh(
+    new BoxGeometry(0.12, 0.5, 0.9),
+    cabinGlassMaterial,
+  );
+  windshield.position.set(0.76, 1.84, 0);
+  windshield.rotation.z = MathUtils.degToRad(-10);
+  vehicle.add(windshield);
+
+  const sideWindowOffsets = [-0.53, 0.53] as const;
+  for (const z of sideWindowOffsets) {
+    const sideWindow = new Mesh(
+      new BoxGeometry(0.86, 0.46, 0.08),
+      cabinGlassMaterial,
+    );
+    sideWindow.position.set(0.2, 1.84, z);
+    vehicle.add(sideWindow);
+  }
+
+  const rearWindow = new Mesh(
+    new BoxGeometry(0.12, 0.46, 0.9),
+    cabinGlassMaterial,
+  );
+  rearWindow.position.set(-0.36, 1.84, 0);
+  rearWindow.rotation.z = MathUtils.degToRad(8);
+  vehicle.add(rearWindow);
+
   const plow = new Mesh(
     new BoxGeometry(0.3, 0.7, 2.9),
     new MeshStandardMaterial({ color: '#62707d', metalness: 0.4, roughness: 0.5 }),
@@ -39,26 +80,37 @@ export function createPlowVehicle(): Group {
   vehicle.userData.plowBaseY = plow.position.y;
   vehicle.userData.plowBaseZRotation = plow.rotation.z;
 
-  const wheelGeometry = new CylinderGeometry(0.46, 0.46, 0.34, 18);
+  const wheelGeometry = new CylinderGeometry(WHEEL_RADIUS, WHEEL_RADIUS, WHEEL_WIDTH, 20);
   const wheelMaterial = new MeshStandardMaterial({ color: '#1d2329', roughness: 0.95 });
+  const treadGeometry = new BoxGeometry(0.14, 0.06, 0.16);
+  const treadMaterial = new MeshStandardMaterial({ color: '#0f1419', roughness: 0.98 });
+  const wheelVisuals: Array<{ steerPivot: Group; spinGroup: Group; steerMultiplier: number }> = [];
 
   const wheelOffsets = [
-    [-0.95, 0.35, -0.82],
-    [-0.95, 0.35, 0.82],
-    [0.95, 0.35, -0.82],
-    [0.95, 0.35, 0.82],
+    [-0.95, 0.35, -0.82, -0.45],
+    [-0.95, 0.35, 0.82, -0.45],
+    [0.95, 0.35, -0.82, 1],
+    [0.95, 0.35, 0.82, 1],
   ] as const;
 
-  for (const [x, y, z] of wheelOffsets) {
+  for (const [x, y, z, steerMultiplier] of wheelOffsets) {
+    const steerPivot = new Group();
+    steerPivot.position.set(x, y, z);
+    vehicle.add(steerPivot);
+
+    const spinGroup = new Group();
+    steerPivot.add(spinGroup);
+
     const wheel = new Mesh(wheelGeometry, wheelMaterial);
-    wheel.position.set(x, y, z);
-    wheel.rotation.z = Math.PI / 2;
-    wheel.rotation.y = Math.PI / 2;
+    wheel.rotation.x = Math.PI / 2;
     wheel.castShadow = true;
-    vehicle.add(wheel);
+    spinGroup.add(wheel);
+
+    addWheelTreads(spinGroup, treadGeometry, treadMaterial);
+    wheelVisuals.push({ steerPivot, spinGroup, steerMultiplier });
   }
 
-  const lampGeometry = new CylinderGeometry(0.085, 0.085, 0.12, 18);
+  const lampGeometry = new CylinderGeometry(0.085, 0.085, 0.03, 10);
   const headlampMaterial = new MeshStandardMaterial({
     color: '#f5f1da',
     emissive: '#fff6c8',
@@ -73,8 +125,8 @@ export function createPlowVehicle(): Group {
   });
 
   const headlightOffsets = [
-    [1.5, 1.35, -0.54],
-    [1.5, 1.35, 0.54],
+    [1.43, 1.35, -0.54],
+    [1.43, 1.35, 0.54],
   ] as const;
 
   for (const [x, y, z] of headlightOffsets) {
@@ -94,8 +146,8 @@ export function createPlowVehicle(): Group {
   }
 
   const taillightOffsets = [
-    [-1.44, 1.18, -0.58],
-    [-1.44, 1.18, 0.58],
+    [-1.43, 1.18, -0.58],
+    [-1.43, 1.18, 0.58],
   ] as const;
 
   for (const [x, y, z] of taillightOffsets) {
@@ -109,7 +161,40 @@ export function createPlowVehicle(): Group {
     vehicle.add(taillight);
   }
 
+  const exhaustStack = new Mesh(
+    new CylinderGeometry(0.05, 0.08, EXHAUST_STACK_HEIGHT, 14),
+    new MeshStandardMaterial({ color: '#3a4047', metalness: 0.42, roughness: 0.58 }),
+  );
+  exhaustStack.position.set(-0.86, 2.1, -0.44);
+  exhaustStack.castShadow = true;
+  vehicle.add(exhaustStack);
+  vehicle.userData.exhaustStack = exhaustStack;
+  vehicle.userData.exhaustTipOffset = new Vector3(0, EXHAUST_STACK_HEIGHT * 0.5 + 0.02, 0);
+
   vehicle.position.y = 0.08;
+  vehicle.userData.wheelVisuals = wheelVisuals;
+  vehicle.userData.wheelRadius = WHEEL_RADIUS;
 
   return vehicle;
+}
+
+function addWheelTreads(parent: Group, treadGeometry: BoxGeometry, treadMaterial: MeshStandardMaterial): void {
+  const radialOffset = WHEEL_RADIUS - 0.01;
+  const axis = new Vector3(0, 0, 1);
+  const quaternion = new Quaternion();
+
+  for (let index = 0; index < WHEEL_TREAD_COUNT; index += 1) {
+    const tread = new Mesh(treadGeometry, treadMaterial);
+    const angle = (index / WHEEL_TREAD_COUNT) * Math.PI * 2;
+    tread.position.set(
+      Math.cos(angle) * radialOffset,
+      Math.sin(angle) * radialOffset,
+      0,
+    );
+    quaternion.setFromAxisAngle(axis, angle);
+    tread.setRotationFromQuaternion(quaternion);
+    tread.rotation.z += MathUtils.degToRad(90);
+    tread.castShadow = true;
+    parent.add(tread);
+  }
 }

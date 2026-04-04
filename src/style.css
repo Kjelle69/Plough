@@ -39,6 +39,7 @@ body {
 
 button,
 input,
+select,
 kbd {
   font: inherit;
 }
@@ -132,6 +133,12 @@ h3 {
   align-items: flex-start;
 }
 
+.hero-button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .primary-button,
 .secondary-button {
   padding: 14px 22px;
@@ -210,6 +217,41 @@ h3 {
   background: rgba(255, 255, 255, 0.05);
 }
 
+.field select {
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(214, 232, 242, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: inherit;
+}
+
+.world-popup-root {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.world-popup {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  will-change: transform, opacity;
+}
+
+.world-popup-negative {
+  background: rgba(110, 8, 8, 0.9);
+  border: 1px solid rgba(255, 142, 142, 0.35);
+  color: #ffd6d6;
+}
+
 .placeholder-grid {
   display: grid;
   gap: 14px;
@@ -225,6 +267,10 @@ h3 {
 
 .placeholder-block {
   margin-top: 18px;
+}
+
+.combo-block p + p {
+  margin-top: 8px;
 }
 
 .leaderboard-list {
@@ -290,6 +336,79 @@ h3 {
   overflow: hidden;
   border: 1px solid rgba(214, 232, 242, 0.18);
   background: linear-gradient(180deg, #bfd0d9 0%, #dde7ec 100%);
+}
+
+.editor-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  gap: 18px;
+  min-height: 0;
+}
+
+.editor-sidebar {
+  align-self: start;
+}
+
+.editor-stage-wrap {
+  position: relative;
+  min-height: 0;
+}
+
+.editor-stage-overlay {
+  position: absolute;
+  left: 18px;
+  bottom: 18px;
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(6, 18, 28, 0.76);
+  border: 1px solid rgba(218, 244, 255, 0.16);
+  backdrop-filter: blur(12px);
+  color: var(--accent-strong);
+  pointer-events: none;
+  z-index: 4;
+}
+
+.editor-stage-overlay span {
+  color: var(--text-muted);
+}
+
+.editor-runtime-overlay {
+  position: absolute;
+  left: 18px;
+  top: 18px;
+  display: grid;
+  gap: 10px;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.editor-runtime-card {
+  display: grid;
+  gap: 4px;
+  min-width: 200px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(6, 18, 28, 0.76);
+  border: 1px solid rgba(218, 244, 255, 0.16);
+  backdrop-filter: blur(12px);
+  color: var(--accent-strong);
+  pointer-events: auto;
+}
+
+.editor-runtime-card span {
+  color: var(--text-muted);
+}
+
+.editor-runtime-actions {
+  pointer-events: auto;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.editor-runtime-actions .secondary-button {
+  width: 100%;
 }
 
 .game-stage canvas {
@@ -448,6 +567,10 @@ kbd {
   }
 
   .menu-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .editor-layout {
     grid-template-columns: 1fr;
   }
 

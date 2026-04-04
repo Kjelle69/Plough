@@ -52,6 +52,7 @@ export interface SnowField {
   isCellActive: (column: number, row: number) => boolean;
   addDynamicHeight: (column: number, row: number, amount: number) => number;
   removeDynamicHeight: (column: number, row: number, amount: number) => number;
+  setDynamicHeight: (column: number, row: number, value: number) => void;
   relax: (passes: number, factor: number) => void;
   needsRender: () => boolean;
   getClearFraction: () => number;
@@ -61,9 +62,33 @@ export interface SnowField {
 
 export interface RouteTarget {
   label: string;
-  fieldLabel: string;
-  center: Vector2;
-  size: Vector2;
+  width: number;
+  closed: boolean;
+  points: Vector2[];
+}
+
+export interface RouteGatePost {
+  label: string;
+  group: Group;
+  position: Vector3;
+  toppled: boolean;
+  topple: (direction: Vector2) => void;
+  reset: () => void;
+}
+
+export interface RoutePoint {
+  x: number;
+  y: number;
+  z: number;
+}
+
+export interface RouteDefinition {
+  worldComboId: string;
+  label: string;
+  width: number;
+  closed: boolean;
+  gateSpacing?: number;
+  points: RoutePoint[];
 }
 
 export interface LevelDefinition {
@@ -71,6 +96,7 @@ export interface LevelDefinition {
   obstacles: ObstacleBody[];
   snowFields: SnowField[];
   routeTargets: RouteTarget[];
+  routeGatePosts: RouteGatePost[];
   spawnPoint: Vector3;
   reset: () => void;
 }

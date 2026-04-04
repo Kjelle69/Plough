@@ -1,4 +1,5 @@
 import type { LevelDefinition, RouteTarget, RunSnapshot, RunStatus, SnowField } from '../core/types';
+import { Vector2 } from 'three';
 
 interface PlowScoringSystemOptions {
   level: LevelDefinition;
@@ -7,10 +8,12 @@ interface PlowScoringSystemOptions {
 }
 
 export class PlowScoringSystem {
+  private static readonly ROUTE_CLEAR_FULL_THRESHOLD = 0.58;
+  private static readonly ROUTE_CLEAR_ZERO_THRESHOLD = 1;
   private readonly level: LevelDefinition;
   private readonly runDurationSeconds: number;
   private readonly devMode: boolean;
-  private readonly routeCells = new Map<string, Array<{ field: SnowField; index: number }>>();
+  private readonly routeCells = new Map<string, Array<{ field: SnowField; index: number; weight: number }>>();
   private timeRemaining = 0;
   private score = 0;
   private status: RunStatus = 'active';
@@ -58,7 +61,7 @@ export class PlowScoringSystem {
     const scoringTargets = this.level.routeTargets.length > 0
       ? this.level.routeTargets.map((target) => ({
           label: target.label,
-          totalCells: this.routeCells.get(target.label)?.length ?? 0,
+          totalCells: this.getRouteCellWeight(target),
           clearFraction: this.getRouteClearFraction(target),
         }))
       : this.level.snowFields.map((field) => ({
@@ -89,10 +92,16 @@ export class PlowScoringSystem {
     return this.getSnapshot();
   }
 
+  applyPenalty(amount: number, highlightedPatch: string | null = null): RunSnapshot {
+    this.score = Math.max(0, this.score - Math.max(0, Math.round(amount)));
+    this.highlightedPatch = highlightedPatch;
+    return this.getSnapshot();
+  }
+
   getSnapshot(): RunSnapshot {
     const progressTargets = this.level.routeTargets.length > 0
       ? this.level.routeTargets.map((target) => ({
-          totalCells: this.routeCells.get(target.label)?.length ?? 0,
+          totalCells: this.getRouteCellWeight(target),
           clearFraction: this.getRouteClearFraction(target),
         }))
       : this.level.snowFields.map((field) => ({
@@ -124,48 +133,134 @@ export class PlowScoringSystem {
     let clearedCells = 0;
     for (const cell of cells) {
       const dynamicHeight = cell.field.dynamicHeight[cell.index];
-      if (dynamicHeight < 1) {
-        clearedCells += 1 - Math.min(dynamicHeight, 1);
+      const clearContribution = this.getAggressiveRouteClearContribution(dynamicHeight);
+      if (clearContribution > 0) {
+        clearedCells += clearContribution * cell.weight;
       }
     }
 
-    return clearedCells / cells.length;
+    const totalWeight = this.getRouteCellWeight(target);
+    return totalWeight <= 0 ? 0 : clearedCells / totalWeight;
   }
 
-  private buildRouteCells(target: RouteTarget): Array<{ field: SnowField; index: number }> {
-    const field = this.level.snowFields.find((candidate) => candidate.label === target.fieldLabel);
-    if (!field) {
-      return [];
-    }
+  private buildRouteCells(target: RouteTarget): Array<{ field: SnowField; index: number; weight: number }> {
+    const cells: Array<{ field: SnowField; index: number; weight: number }> = [];
+    const routeBounds = this.getRouteBounds(target);
+    const halfWidth = target.width / 2;
 
-    const halfWidth = target.size.x / 2;
-    const halfDepth = target.size.y / 2;
-    const minCell = field.toCell(target.center.x - halfWidth, target.center.y - halfDepth);
-    const maxCell = field.toCell(target.center.x + halfWidth, target.center.y + halfDepth);
+    for (const field of this.level.snowFields) {
+      const fieldMinX = field.center.x - field.size.x / 2;
+      const fieldMaxX = field.center.x + field.size.x / 2;
+      const fieldMinZ = field.center.y - field.size.y / 2;
+      const fieldMaxZ = field.center.y + field.size.y / 2;
 
-    if (!minCell || !maxCell) {
-      return [];
-    }
+      if (
+        fieldMaxX < routeBounds.minX - halfWidth ||
+        fieldMinX > routeBounds.maxX + halfWidth ||
+        fieldMaxZ < routeBounds.minZ - halfWidth ||
+        fieldMinZ > routeBounds.maxZ + halfWidth
+      ) {
+        continue;
+      }
 
-    const cells: Array<{ field: SnowField; index: number }> = [];
-    for (let row = Math.min(minCell.row, maxCell.row); row <= Math.max(minCell.row, maxCell.row); row += 1) {
-      for (let column = Math.min(minCell.column, maxCell.column); column <= Math.max(minCell.column, maxCell.column); column += 1) {
-        const worldX = field.center.x - field.size.x / 2 + column * field.cellWidth;
-        const worldZ = field.center.y - field.size.y / 2 + row * field.cellDepth;
-        if (
-          worldX < target.center.x - halfWidth ||
-          worldX > target.center.x + halfWidth ||
-          worldZ < target.center.y - halfDepth ||
-          worldZ > target.center.y + halfDepth ||
-          !field.isCellActive(column, row)
-        ) {
-          continue;
+      for (let row = 0; row < field.rows; row += 1) {
+        for (let column = 0; column < field.columns; column += 1) {
+          if (!field.isCellActive(column, row)) {
+            continue;
+          }
+
+          const worldX = field.center.x - field.size.x / 2 + column * field.cellWidth;
+          const worldZ = field.center.y - field.size.y / 2 + row * field.cellDepth;
+          if (
+            worldX < routeBounds.minX - halfWidth ||
+            worldX > routeBounds.maxX + halfWidth ||
+            worldZ < routeBounds.minZ - halfWidth ||
+            worldZ > routeBounds.maxZ + halfWidth
+          ) {
+            continue;
+          }
+
+          const routeDistanceSquared = this.getRouteDistanceSquared(target, worldX, worldZ);
+          if (routeDistanceSquared > halfWidth * halfWidth) {
+            continue;
+          }
+
+          const normalizedDistance = Math.min(1, Math.sqrt(routeDistanceSquared) / Math.max(halfWidth, 0.0001));
+          const centerBias = 1 - normalizedDistance;
+          const weight = 0.25 + Math.pow(centerBias, 1.35) * 0.75;
+          cells.push({ field, index: field.cellIndex(column, row), weight });
         }
-
-        cells.push({ field, index: field.cellIndex(column, row) });
       }
     }
 
     return cells;
+  }
+
+  private getRouteDistanceSquared(target: RouteTarget, worldX: number, worldZ: number): number {
+    const point = new Vector2(worldX, worldZ);
+    const points = target.points;
+    if (points.length < 2) {
+      return Number.POSITIVE_INFINITY;
+    }
+
+    const segmentCount = target.closed ? points.length : points.length - 1;
+    let minDistanceSquared = Number.POSITIVE_INFINITY;
+
+    for (let index = 0; index < segmentCount; index += 1) {
+      const start = points[index];
+      const end = points[(index + 1) % points.length];
+      minDistanceSquared = Math.min(minDistanceSquared, this.distanceToSegmentSquared(point, start, end));
+    }
+
+    return minDistanceSquared;
+  }
+
+  private getRouteCellWeight(target: RouteTarget): number {
+    const cells = this.routeCells.get(target.label) ?? [];
+    return cells.reduce((sum, cell) => sum + cell.weight, 0);
+  }
+
+  private getAggressiveRouteClearContribution(dynamicHeight: number): number {
+    if (dynamicHeight <= PlowScoringSystem.ROUTE_CLEAR_FULL_THRESHOLD) {
+      return 1;
+    }
+
+    if (dynamicHeight >= PlowScoringSystem.ROUTE_CLEAR_ZERO_THRESHOLD) {
+      return 0;
+    }
+
+    const normalized =
+      (dynamicHeight - PlowScoringSystem.ROUTE_CLEAR_FULL_THRESHOLD) /
+      (PlowScoringSystem.ROUTE_CLEAR_ZERO_THRESHOLD - PlowScoringSystem.ROUTE_CLEAR_FULL_THRESHOLD);
+
+    return 1 - Math.pow(normalized, 1.3);
+  }
+
+  private distanceToSegmentSquared(point: Vector2, start: Vector2, end: Vector2): number {
+    const delta = end.clone().sub(start);
+    const lengthSquared = delta.lengthSq();
+    if (lengthSquared <= 0.0001) {
+      return point.distanceToSquared(start);
+    }
+
+    const t = Math.max(0, Math.min(1, point.clone().sub(start).dot(delta) / lengthSquared));
+    const projection = start.clone().addScaledVector(delta, t);
+    return point.distanceToSquared(projection);
+  }
+
+  private getRouteBounds(target: RouteTarget): { minX: number; maxX: number; minZ: number; maxZ: number } {
+    let minX = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let minZ = Number.POSITIVE_INFINITY;
+    let maxZ = Number.NEGATIVE_INFINITY;
+
+    for (const point of target.points) {
+      minX = Math.min(minX, point.x);
+      maxX = Math.max(maxX, point.x);
+      minZ = Math.min(minZ, point.y);
+      maxZ = Math.max(maxZ, point.y);
+    }
+
+    return { minX, maxX, minZ, maxZ };
   }
 }

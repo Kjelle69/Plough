@@ -746,3 +746,106 @@ pm run build passes after the night-lighting, wheel, lamp, and snow-spray pass.
 
 - Lowered the surrounding static snow surface slightly so the plowed lake surface can read more clearly underneath.
 - This keeps the soft snowy continuation outside the playable area while reducing the chance that the surround layer visually competes with exposed ice in cleared tracks.
+
+## Dev Editor Entry And World Combo Scaffold
+
+- Added an explicit world/plow-area combo preset layer, with `Noulajarvi` as the first named preset instead of keeping the current map setup implicit.
+- The menu now exposes that combo selection directly so future villa-area, forest-road, and other world/surface combinations can slot into the same flow.
+- In `?dev=1`, the menu now shows an `Edit` action that opens a dedicated editor view rather than dropping straight into normal play.
+- The first editor pass reuses the 3D runtime and selected combo inside an editor shell so route tools, gate placement, and JSON export can be added next without reworking the navigation again.
+
+## Route Editor Runtime Pass
+
+- Split editor behavior from normal play inside `GameRuntime` so editor mode no longer mounts the gameplay HUD, tuning panel, or active plow/run loop.
+- Added an editor camera workflow:
+  - right mouse drag orbits
+  - middle mouse drag pans
+  - mouse wheel zooms
+- Added live route-point placement on the snow surface in editor mode:
+  - left click adds a point
+  - a red centerline and red point markers render immediately in 3D
+  - `Backspace` removes the last point
+  - `C` clears the route
+  - `Enter` exports the current route JSON to the clipboard
+- Extended debug output so editor mode now reports route points as part of `render_game_to_text`.
+
+## Route Width, Selection, And Loop Pass
+
+- Upgraded the editor from loose point drops into actual route data:
+  - each route now has `points`, `width`, and `closed` state
+  - export JSON includes those fields
+- Added point selection and point dragging directly in the 3D editor scene.
+- Added a visible translucent route ribbon built from the centerline plus route width, so the future scoring area can be previewed in-editor.
+- Added loop closing support:
+  - `L` toggles between open route and closed loop
+  - the centerline and width ribbon update accordingly
+- Added width editing in-editor with `[` and `]`.
+
+## Route Asset, Gates, And Scoring Integration
+
+- Promoted the clipboard-authored `Noulajarvi` route into a real project asset under `src/game/routes/`.
+- Extended world presets so a world/plow-area combo can also own a route definition, not just the map choice.
+- Updated the level builder to:
+  - load the combo route
+  - spawn the vehicle at the route start
+  - generate slim red gate posts with reflective caps along the route at regular spacing
+- Reworked `PlowScoringSystem` so route progress now follows centerline + width instead of the older axis-aligned rectangle targets.
+- Editor mode now loads the preset route back in, so authoring and play both use the same route format.
+
+## Validation Notes
+
+- `npm run build` passes after the route asset / gate / scoring integration.
+- Browser smoke against the existing `?dev=1` server confirmed:
+  - play mode now spawns at the route start
+  - red gate pairs render in the world
+  - the HUD route progress now runs against a single integrated authored route
+- Validation artifacts were written under `output/web-game/route-play-pass`.
+
+## Editor Clear And Save Pass
+
+- Split authored route playback from editor rendering:
+  - editor mode now loads the route geometry for editing
+  - play-only gate posts are no longer spawned into the editor scene
+- `Clear` now truly clears the visible editor route because the editor is no longer drawing the play-mode gate markers underneath.
+- Added persistent route saving per world combo in browser storage.
+- The editor now supports both:
+  - `S` or `Save Route` to save the current route back to local storage
+  - `Enter` or `Copy JSON` to export JSON for manual versioning/check-in
+- Saving an empty route now overrides the preset too, so a cleared editor state can be persisted instead of silently reverting to the baked route.
+
+## Validation Notes
+
+- `npm run build` passes after the editor clear/save pass.
+- Browser smoke against the existing `?dev=1` server confirmed the editor opens with the stored authored route ribbon and without play-mode gate posts.
+- Validation artifacts were written under `output/web-game/editor-save-pass`.
+
+## Vehicle Visuals And Asset Folder Cleanup
+
+- Halved the route gate post diameter so the red marker pins read slimmer and less chunky in-world.
+- Rebuilt the plow wheels as proper steer/spin rigs with coarse tire lugs instead of plain cylinders.
+- The runtime now drives wheel visuals from vehicle motion:
+  - wheels revolve with forward/reverse motion
+  - front and rear wheels steer visually for the current four-wheel-steer plow setup
+- Updated the controller steering model to use wheel-angle-based yaw rather than the older abstract heading response.
+- Moved the `Noulajarvi` map model into a clearer asset path under `src/assets/worlds/noulajarvi/`.
+- Added `README.md` markers for:
+  - `src/assets/worlds/` for world/ground models
+  - `src/assets/tracks/` for future track/gate/route visual assets
+
+## Diesel Audio And Exhaust Pass
+
+- Added an exhaust stack on top of the plow vehicle.
+- Added `ExhaustSmokeSystem` for dark soot-like smoke when the machine is working hard under throttle/load.
+- Added `VehicleAudioSystem` with generated prototype audio:
+  - low diesel engine rumble
+  - extra dirty diesel/noise layer under load
+  - plow scrape noise while the blade is down in snow
+- Hooked both systems into play mode only so editor mode stays quiet and visually clean.
+- The runtime now resets exhaust particles on run reset.
+
+## Validation Notes
+
+- `npm run build` passes after the diesel audio/exhaust pass.
+- Browser smoke against the existing `?dev=1` server confirmed the play scene still loads and the new exhaust stack renders on the vehicle.
+- Sound itself still needs manual listening verification in a normal browser session because headless artifacts do not prove audio behavior.
+- Validation artifacts were written under `output/web-game/audio-exhaust-pass`.

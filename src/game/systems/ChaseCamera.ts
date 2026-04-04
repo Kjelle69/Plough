@@ -1,7 +1,7 @@
 import { PerspectiveCamera, Vector3 } from 'three';
 import type { ChaseCameraRig, ChaseCameraTarget } from '../core/types';
 
-const BASE_DISTANCE = 7.5;
+const BASE_DISTANCE = 15;
 const BASE_HEIGHT = 5.2;
 const LOOK_AHEAD_DISTANCE = 2.8;
 const LOOK_AHEAD_HEIGHT = 1.2;

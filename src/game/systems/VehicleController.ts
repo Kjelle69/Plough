@@ -10,6 +10,9 @@ interface VehicleControllerOptions {
 const FORWARD = new Vector3(1, 0, 0);
 const HALF_EXTENTS = new Vector3(1.75, 1.15, 1.4);
 const UP_AXIS = new Vector3(0, 1, 0);
+const STEERING_WHEELBASE = 2.45;
+const MAX_FRONT_STEER_ANGLE = 0.58;
+const MAX_REAR_STEER_ANGLE = 0.24;
 
 interface VehicleControllerModifiers {
   onSnow: boolean;
@@ -96,11 +99,12 @@ export class VehicleController {
     this.forwardDirection.copy(FORWARD).applyAxisAngle(UP_AXIS, this.physicsState.heading);
     let forwardSpeed = this.velocity.dot(this.forwardDirection);
 
-    const speedRatio = Math.min(Math.abs(forwardSpeed) / maxForwardSpeed, 1);
-    const steeringResponse = modifiers.onSnow ? 1.35 : 1.7;
-    const steeringAuthority = (0.22 + (1 - speedRatio * 0.45)) * traction;
-    const steeringDirection = Math.sign(forwardSpeed || 1);
-    this.physicsState.heading -= input.steer * steeringResponse * steeringAuthority * steeringDirection * deltaSeconds;
+    const speedRatio = Math.min(Math.abs(forwardSpeed) / Math.max(maxForwardSpeed, 0.001), 1);
+    const steerGrip = Math.max(0.22, traction);
+    const frontSteerAngle = input.steer * MAX_FRONT_STEER_ANGLE * (0.42 + (1 - speedRatio) * 0.58) * steerGrip;
+    const rearSteerAngle = -input.steer * MAX_REAR_STEER_ANGLE * Math.max(0.18, 1 - speedRatio * 0.9) * steerGrip;
+    const curvature = (Math.tan(frontSteerAngle) - Math.tan(rearSteerAngle)) / STEERING_WHEELBASE;
+    this.physicsState.heading -= curvature * forwardSpeed * deltaSeconds;
 
     vehicle.rotation.y = this.physicsState.heading;
     this.forwardDirection.copy(FORWARD).applyAxisAngle(UP_AXIS, this.physicsState.heading);

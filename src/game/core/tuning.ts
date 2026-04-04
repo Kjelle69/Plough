@@ -55,7 +55,7 @@ export function createDefaultGameplayTuning(): GameplayTuning {
       maxForwardSpeed: 5.9,
       reverseEngineForce: 16.6,
       maxReverseSpeed: 8.7,
-      frontLoadDivisor: 1.45,
+      frontLoadDivisor: 1.39,
       frontLoadDragStrength: 0.62,
       frontLoadEngineStrength: 0.68,
       frontLoadResistanceStrength: 0.8,

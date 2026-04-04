@@ -1,4 +1,4 @@
-export type AppView = 'menu' | 'game';
+export type AppView = 'menu' | 'game' | 'editor';
 
 export interface LeaderboardEntry {
   rank: number;

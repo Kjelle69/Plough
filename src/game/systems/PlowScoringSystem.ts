@@ -3,35 +3,41 @@ import { Vector2 } from 'three';
 
 interface PlowScoringSystemOptions {
   level: LevelDefinition;
-  runDurationSeconds?: number;
   devMode?: boolean;
 }
 
 export class PlowScoringSystem {
   private static readonly ROUTE_CLEAR_FULL_THRESHOLD = 0.58;
   private static readonly ROUTE_CLEAR_ZERO_THRESHOLD = 1;
+  private static readonly ROUTE_PROGRESS_ASSIST_START = 0.52;
+  private static readonly ROUTE_PROGRESS_ASSIST_MAX = 0.16;
+  private static readonly COMPLETION_BONUS_BASE = 18000;
+  private static readonly COMPLETION_BONUS_FLOOR = 2500;
+  private static readonly COMPLETION_BONUS_DECAY_PER_SECOND = 120;
   private readonly level: LevelDefinition;
-  private readonly runDurationSeconds: number;
-  private readonly devMode: boolean;
   private readonly routeCells = new Map<string, Array<{ field: SnowField; index: number; weight: number }>>();
-  private timeRemaining = 0;
+  private elapsedSeconds = 0;
   private score = 0;
   private status: RunStatus = 'active';
   private highlightedPatch: string | null = null;
   private previousClearFractions = new Map<string, number>();
+  private completionBonus = 0;
+  private penaltyPoints = 0;
+  private pinMisses = 0;
 
   constructor(options: PlowScoringSystemOptions) {
     this.level = options.level;
-    this.runDurationSeconds = options.runDurationSeconds ?? 75;
-    this.devMode = options.devMode ?? false;
     this.reset();
   }
 
   reset(): void {
-    this.timeRemaining = this.devMode ? Number.POSITIVE_INFINITY : this.runDurationSeconds;
+    this.elapsedSeconds = 0;
     this.score = 0;
     this.status = 'active';
     this.highlightedPatch = null;
+    this.completionBonus = 0;
+    this.penaltyPoints = 0;
+    this.pinMisses = 0;
     this.previousClearFractions.clear();
     this.routeCells.clear();
 
@@ -53,16 +59,14 @@ export class PlowScoringSystem {
       return this.getSnapshot();
     }
 
-    if (!this.devMode) {
-      this.timeRemaining = Math.max(0, this.timeRemaining - deltaSeconds);
-    }
+    this.elapsedSeconds += deltaSeconds;
     this.highlightedPatch = null;
 
     const scoringTargets = this.level.routeTargets.length > 0
       ? this.level.routeTargets.map((target) => ({
           label: target.label,
           totalCells: this.getRouteCellWeight(target),
-          clearFraction: this.getRouteClearFraction(target),
+          clearFraction: this.getRouteProgressFraction(target),
         }))
       : this.level.snowFields.map((field) => ({
           label: field.label,
@@ -84,16 +88,19 @@ export class PlowScoringSystem {
 
     const snapshot = this.getSnapshot();
     if (snapshot.clearedPercent >= 100) {
+      this.completionBonus = this.calculateCompletionBonus();
+      this.score += this.completionBonus;
       this.status = 'complete';
-    } else if (!this.devMode && this.timeRemaining <= 0) {
-      this.status = 'failed';
     }
 
     return this.getSnapshot();
   }
 
   applyPenalty(amount: number, highlightedPatch: string | null = null): RunSnapshot {
-    this.score = Math.max(0, this.score - Math.max(0, Math.round(amount)));
+    const penalty = Math.max(0, Math.round(amount));
+    this.score = Math.max(0, this.score - penalty);
+    this.penaltyPoints += penalty;
+    this.pinMisses += 1;
     this.highlightedPatch = highlightedPatch;
     return this.getSnapshot();
   }
@@ -102,7 +109,7 @@ export class PlowScoringSystem {
     const progressTargets = this.level.routeTargets.length > 0
       ? this.level.routeTargets.map((target) => ({
           totalCells: this.getRouteCellWeight(target),
-          clearFraction: this.getRouteClearFraction(target),
+          clearFraction: this.getRouteProgressFraction(target),
         }))
       : this.level.snowFields.map((field) => ({
           totalCells: field.totalCells,
@@ -114,8 +121,13 @@ export class PlowScoringSystem {
     const totalPatches = progressTargets.length;
 
     return {
-      timeRemaining: Number.isFinite(this.timeRemaining) ? Number(this.timeRemaining.toFixed(1)) : Number.POSITIVE_INFINITY,
+      timeRemaining: Number(this.elapsedSeconds.toFixed(1)),
       score: this.score,
+      elapsedSeconds: Number(this.elapsedSeconds.toFixed(1)),
+      baseScore: Math.max(0, this.score - this.completionBonus),
+      completionBonus: this.completionBonus,
+      penaltyPoints: this.penaltyPoints,
+      pinMisses: this.pinMisses,
       clearedPercent: totalCells === 0 ? 0 : Number(((clearedCells / totalCells) * 100).toFixed(1)),
       clearedPatches,
       totalPatches,
@@ -141,6 +153,26 @@ export class PlowScoringSystem {
 
     const totalWeight = this.getRouteCellWeight(target);
     return totalWeight <= 0 ? 0 : clearedCells / totalWeight;
+  }
+
+  private calculateCompletionBonus(): number {
+    const rawBonus =
+      PlowScoringSystem.COMPLETION_BONUS_BASE -
+      this.elapsedSeconds * PlowScoringSystem.COMPLETION_BONUS_DECAY_PER_SECOND;
+    return Math.max(PlowScoringSystem.COMPLETION_BONUS_FLOOR, Math.round(rawBonus));
+  }
+
+  private getRouteProgressFraction(target: RouteTarget): number {
+    const rawFraction = this.getRouteClearFraction(target);
+    if (rawFraction <= PlowScoringSystem.ROUTE_PROGRESS_ASSIST_START) {
+      return rawFraction;
+    }
+
+    const normalized =
+      (rawFraction - PlowScoringSystem.ROUTE_PROGRESS_ASSIST_START) /
+      (1 - PlowScoringSystem.ROUTE_PROGRESS_ASSIST_START);
+    const assist = Math.sin(normalized * Math.PI * 0.5) * PlowScoringSystem.ROUTE_PROGRESS_ASSIST_MAX;
+    return Math.min(1, rawFraction + assist);
   }
 
   private buildRouteCells(target: RouteTarget): Array<{ field: SnowField; index: number; weight: number }> {

@@ -43,6 +43,7 @@ interface GameRuntimeOptions {
   mode: 'play' | 'editor';
   worldComboId: string;
   worldComboLabel: string;
+  onRunComplete?: (snapshot: RunSnapshot) => void;
   onExitToMenu: () => void;
 }
 
@@ -159,6 +160,11 @@ export class GameRuntime {
   private runSnapshot: RunSnapshot = {
     timeRemaining: Number.POSITIVE_INFINITY,
     score: 0,
+    elapsedSeconds: 0,
+    baseScore: 0,
+    completionBonus: 0,
+    penaltyPoints: 0,
+    pinMisses: 0,
     clearedPercent: 0,
     clearedPatches: 0,
     totalPatches: 0,
@@ -203,6 +209,7 @@ export class GameRuntime {
   private editorCameraDistance = 120;
 
   private wheelSpinRotation = 0;
+  private completionNotified = false;
 
   private popupRoot: HTMLDivElement | null = null;
 
@@ -627,6 +634,10 @@ export class GameRuntime {
     this.updateRouteGateHits(bladeCenter);
     this.updateVehicleWheelVisuals(deltaSeconds, inputState.steer);
     this.runSnapshot = this.plowRun.update(deltaSeconds);
+    if (this.runSnapshot.status === 'complete' && !this.completionNotified) {
+      this.completionNotified = true;
+      this.options.onRunComplete?.(this.runSnapshot);
+    }
     this.chaseCamera.update(deltaSeconds, {
       position: this.vehicle.position,
       heading: this.vehicle.rotation.y,
@@ -817,6 +828,7 @@ export class GameRuntime {
     this.plowAngle = 0;
     this.plowLift = 0;
     this.wheelSpinRotation = 0;
+    this.completionNotified = false;
     this.snowSpray.reset();
     this.exhaustSmoke.reset();
     this.level.reset();

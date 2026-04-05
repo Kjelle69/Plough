@@ -849,3 +849,14 @@ pm run build passes after the night-lighting, wheel, lamp, and snow-spray pass.
 - Browser smoke against the existing `?dev=1` server confirmed the play scene still loads and the new exhaust stack renders on the vehicle.
 - Sound itself still needs manual listening verification in a normal browser session because headless artifacts do not prove audio behavior.
 - Validation artifacts were written under `output/web-game/audio-exhaust-pass`.
+
+## Sky Atmosphere Pass
+
+- Lowered the moon in the night sky so it sits closer to the horizon and reads less like a high overhead light source.
+- Added several lightweight cloud groups made from soft transparent puff meshes directly in `setupSceneLighting`, keeping the change local to sky/lighting setup.
+
+## Validation Notes
+
+- `npm run build` passes after the moon/cloud pass.
+- Browser smoke against the existing `http://localhost:5173/?dev=1` server confirmed the game scene still loads without breaking the runtime.
+- The automated capture angle stayed low to the ground, so cloud visibility should still be judged manually in the live browser session.

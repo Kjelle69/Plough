@@ -73,7 +73,7 @@ export class GameHud {
     this.fill.style.width = `${snapshot.clearedPercent}%`;
 
     if (snapshot.status === 'complete') {
-      this.status.textContent = 'Route complete. Press R to restart or use Return to Menu.';
+      this.status.textContent = 'Route complete. Final score includes a speed bonus. Press R to restart or use Return to Menu.';
       this.status.dataset.state = 'complete';
       return;
     }

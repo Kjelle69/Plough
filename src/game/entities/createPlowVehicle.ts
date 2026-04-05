@@ -12,9 +12,11 @@ import {
 } from 'three';
 
 const WHEEL_RADIUS = 0.46;
-const WHEEL_WIDTH = 0.28;
+const WHEEL_WIDTH = 0.48;
 const WHEEL_TREAD_COUNT = 12;
 const EXHAUST_STACK_HEIGHT = 1.05;
+const AXLE_RADIUS = 0.08;
+const AXLE_HUB_WIDTH = 0.26;
 
 export function createPlowVehicle(): Group {
   const vehicle = new Group();
@@ -82,16 +84,21 @@ export function createPlowVehicle(): Group {
 
   const wheelGeometry = new CylinderGeometry(WHEEL_RADIUS, WHEEL_RADIUS, WHEEL_WIDTH, 20);
   const wheelMaterial = new MeshStandardMaterial({ color: '#1d2329', roughness: 0.95 });
-  const treadGeometry = new BoxGeometry(0.14, 0.06, 0.16);
+  const treadGeometry = new BoxGeometry(0.14, 0.06, 0.36);
   const treadMaterial = new MeshStandardMaterial({ color: '#0f1419', roughness: 0.98 });
+  const axleMaterial = new MeshStandardMaterial({ color: '#313941', metalness: 0.24, roughness: 0.78 });
+  const axleHubMaterial = new MeshStandardMaterial({ color: '#232a31', metalness: 0.32, roughness: 0.66 });
   const wheelVisuals: Array<{ steerPivot: Group; spinGroup: Group; steerMultiplier: number }> = [];
 
   const wheelOffsets = [
-    [-0.95, 0.35, -0.82, -0.45],
-    [-0.95, 0.35, 0.82, -0.45],
-    [0.95, 0.35, -0.82, 1],
-    [0.95, 0.35, 0.82, 1],
+    [-0.85, 0.55, -0.88, -0.45],
+    [-0.85, 0.55, 0.88, -0.45],
+    [0.85, 0.55, -0.88, 1],
+    [0.85, 0.55, 0.88, 1],
   ] as const;
+
+  addAxleAssembly(vehicle, axleMaterial, axleHubMaterial, wheelOffsets[0][0], wheelOffsets[0][1], wheelOffsets[0][2], wheelOffsets[1][2]);
+  addAxleAssembly(vehicle, axleMaterial, axleHubMaterial, wheelOffsets[2][0], wheelOffsets[2][1], wheelOffsets[2][2], wheelOffsets[3][2]);
 
   for (const [x, y, z, steerMultiplier] of wheelOffsets) {
     const steerPivot = new Group();
@@ -176,6 +183,36 @@ export function createPlowVehicle(): Group {
   vehicle.userData.wheelRadius = WHEEL_RADIUS;
 
   return vehicle;
+}
+
+function addAxleAssembly(
+  parent: Group,
+  axleMaterial: MeshStandardMaterial,
+  axleHubMaterial: MeshStandardMaterial,
+  x: number,
+  y: number,
+  leftZ: number,
+  rightZ: number,
+): void {
+  const axleLength = Math.abs(rightZ - leftZ);
+  const axleCenterZ = (leftZ + rightZ) * 0.5;
+
+  const axle = new Mesh(
+    new CylinderGeometry(AXLE_RADIUS, AXLE_RADIUS, axleLength, 14),
+    axleMaterial,
+  );
+  axle.position.set(x, y, axleCenterZ);
+  axle.rotation.x = Math.PI / 2;
+  axle.castShadow = true;
+  parent.add(axle);
+
+  const axleHub = new Mesh(
+    new BoxGeometry(AXLE_HUB_WIDTH, AXLE_HUB_WIDTH, AXLE_HUB_WIDTH),
+    axleHubMaterial,
+  );
+  axleHub.position.set(x, y, axleCenterZ);
+  axleHub.castShadow = true;
+  parent.add(axleHub);
 }
 
 function addWheelTreads(parent: Group, treadGeometry: BoxGeometry, treadMaterial: MeshStandardMaterial): void {

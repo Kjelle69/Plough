@@ -120,6 +120,11 @@ export type RunStatus = 'active' | 'complete' | 'failed';
 export interface RunSnapshot {
   timeRemaining: number;
   score: number;
+  elapsedSeconds: number;
+  baseScore: number;
+  completionBonus: number;
+  penaltyPoints: number;
+  pinMisses: number;
   clearedPercent: number;
   clearedPatches: number;
   totalPatches: number;

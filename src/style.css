@@ -338,6 +338,97 @@ h3 {
   background: linear-gradient(180deg, #bfd0d9 0%, #dde7ec 100%);
 }
 
+.run-result-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(3, 10, 16, 0.52);
+  backdrop-filter: blur(10px);
+  z-index: 8;
+}
+
+.run-result-card {
+  width: min(720px, calc(100% - 24px));
+  max-height: calc(100% - 24px);
+  overflow: auto;
+  padding: 24px;
+  border-radius: 28px;
+  border: 1px solid rgba(218, 244, 255, 0.18);
+  background:
+    linear-gradient(180deg, rgba(8, 19, 28, 0.96), rgba(6, 14, 20, 0.98)),
+    radial-gradient(circle at top, rgba(143, 215, 255, 0.08), transparent 55%);
+  box-shadow: 0 32px 96px rgba(0, 0, 0, 0.38);
+}
+
+.run-result-summary {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.run-result-score,
+.run-result-clear,
+.run-result-row {
+  padding: 16px 18px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(214, 232, 242, 0.08);
+}
+
+.run-result-score,
+.run-result-clear {
+  display: grid;
+  gap: 6px;
+}
+
+.run-result-score span,
+.run-result-clear span,
+.run-result-row span {
+  color: var(--text-muted);
+}
+
+.run-result-score strong {
+  font-size: clamp(2rem, 5vw, 3rem);
+  color: var(--accent-strong);
+}
+
+.run-result-clear strong {
+  font-size: 1.8rem;
+}
+
+.run-result-breakdown {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.run-result-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+}
+
+.run-result-row strong {
+  font-size: 1.1rem;
+}
+
+.run-result-row-penalty strong {
+  color: #ffb1b1;
+}
+
+.run-result-leaderboard {
+  margin-bottom: 18px;
+}
+
+.run-result-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .editor-layout {
   display: grid;
   grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
